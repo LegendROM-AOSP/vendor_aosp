@@ -203,9 +203,13 @@ KERNEL_HEADERS_INSTALL_STAMP := $(KERNEL_OUT)/.headers_install_stamp
 ifeq ($(NEED_KERNEL_MODULE_ROOT),true)
 KERNEL_MODULES_INSTALL := root
 KERNEL_MODULES_OUT := $(TARGET_ROOT_OUT)/lib/modules
+KERNEL_DEPMOD_STAGING_DIR := $(call intermediates-dir-for,PACKAGING,depmod_recovery)
+KERNEL_MODULE_MOUNTPOINT :=
 else
-KERNEL_MODULES_INSTALL := system
-KERNEL_MODULES_OUT := $(TARGET_OUT)/lib/modules
+KERNEL_MODULES_INSTALL := $(TARGET_COPY_OUT_VENDOR)
+KERNEL_MODULES_OUT := $(TARGET_OUT_VENDOR)/lib/modules
+KERNEL_DEPMOD_STAGING_DIR := $(call intermediates-dir-for,PACKAGING,depmod_vendor)
+KERNEL_MODULE_MOUNTPOINT := vendor
 endif
 
 TARGET_KERNEL_CROSS_COMPILE_PREFIX := $(strip $(TARGET_KERNEL_CROSS_COMPILE_PREFIX))
@@ -270,6 +274,7 @@ $(KERNEL_OUT_STAMP):
 	$(hide) mkdir -p $(KERNEL_OUT)
 	$(hide) rm -rf $(KERNEL_MODULES_OUT)
 	$(hide) mkdir -p $(KERNEL_MODULES_OUT)
+	$(hide) rm -rf $(KERNEL_DEPMOD_STAGING_DIR)
 	$(hide) touch $@
 
 KERNEL_ADDITIONAL_CONFIG_OUT := $(KERNEL_OUT)/.additional_config
@@ -292,25 +297,33 @@ $(KERNEL_CONFIG): $(KERNEL_OUT_STAMP) $(KERNEL_DEFCONFIG_SRC) $(KERNEL_ADDITIONA
 
 TARGET_KERNEL_BINARIES: $(KERNEL_OUT_STAMP) $(KERNEL_CONFIG) $(KERNEL_HEADERS_INSTALL_STAMP)
 	@echo "Building Kernel"
-	$(MAKE) $(MAKE_FLAGS) -C $(KERNEL_SRC) O=$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) $(KERNEL_CROSS_COMPILE) $(TARGET_PREBUILT_INT_KERNEL_TYPE)
-	$(hide) if grep -q 'CONFIG_OF=y' $(KERNEL_CONFIG) ; \
-			then \
-				echo "Building DTBs" ; \
-				$(MAKE) $(MAKE_FLAGS) -C $(KERNEL_SRC) O=$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) $(KERNEL_CROSS_COMPILE) dtbs ; \
-			else \
-				echo "DTBs not enabled" ; \
-			fi ;
-	$(hide) if grep -q 'CONFIG_MODULES=y' $(KERNEL_CONFIG) ; \
-			then \
-				echo "Building Kernel Modules" ; \
-				$(MAKE) $(MAKE_FLAGS) -C $(KERNEL_SRC) O=$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) $(KERNEL_CROSS_COMPILE) modules && \
-				$(MAKE) $(MAKE_FLAGS) -C $(KERNEL_SRC) O=$(KERNEL_OUT) INSTALL_MOD_PATH=../../$(KERNEL_MODULES_INSTALL) ARCH=$(KERNEL_ARCH) $(KERNEL_CROSS_COMPILE) modules_install && \
-				$(mv-modules) && \
-				$(clean-module-folder) ; \
-			else \
-				echo "Kernel Modules not enabled" ; \
-			fi ;
+	$(MAKE) $(MAKE_FLAGS) -C $(KERNEL_SRC) O=$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) $(KERNEL_CROSS_COMPILE) $(BOARD_KERNEL_IMAGE_NAME)
+	$(hide) if grep -q '^CONFIG_OF=y' $(KERNEL_CONFIG); then \
+			echo "Building DTBs"; \
+			$(MAKE) $(MAKE_FLAGS) -C $(KERNEL_SRC) O=$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) $(KERNEL_CROSS_COMPILE) dtbs; \
+		fi
+	$(hide) if grep -q '^CONFIG_MODULES=y' $(KERNEL_CONFIG); then \
+			echo "Building Kernel Modules"; \
+			$(MAKE) $(MAKE_FLAGS) -C $(KERNEL_SRC) O=$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) $(KERNEL_CROSS_COMPILE) modules; \
+		fi
 
+.PHONY: INSTALLED_KERNEL_MODULES
+INSTALLED_KERNEL_MODULES:
+	$(hide) if grep -q '^CONFIG_MODULES=y' $(KERNEL_CONFIG); then \
+			echo "Installing Kernel Modules"; \
+			$(MAKE) $(MAKE_FLAGS) -C $(KERNEL_SRC) O=$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) $(KERNEL_CROSS_COMPILE) INSTALL_MOD_PATH=../../$(KERNEL_MODULES_INSTALL) modules_install && \
+			mofile=$$(find $(KERNEL_MODULES_OUT) -type f -name modules.order) && \
+			mpath=$$(dirname $$mofile) && \
+			for f in $$(find $$mpath/kernel -type f -name '*.ko'); do \
+				$(KERNEL_TOOLCHAIN_PATH)strip --strip-unneeded $$f; \
+				mv $$f $(KERNEL_MODULES_OUT); \
+			done && \
+			rm -rf $$mpath && \
+			mkdir -p $(KERNEL_DEPMOD_STAGING_DIR)/lib/modules/0.0/$(KERNEL_MODULE_MOUNTPOINT)/lib/modules && \
+			find $(KERNEL_MODULES_OUT) -name *.ko -exec cp {} $(KERNEL_DEPMOD_STAGING_DIR)/lib/modules/0.0/$(KERNEL_MODULE_MOUNTPOINT)/lib/modules \; && \
+			$(DEPMOD) -b $(KERNEL_DEPMOD_STAGING_DIR) 0.0 && \
+			sed -e 's/\(.*modules.*\):/\/\1:/g' -e 's/ \([^ ]*modules[^ ]*\)/ \/\1/g' $(KERNEL_DEPMOD_STAGING_DIR)/lib/modules/0.0/modules.dep > $(KERNEL_MODULES_OUT)/modules.dep; \
+		fi
 
 $(TARGET_KERNEL_MODULES): TARGET_KERNEL_BINARIES
 
