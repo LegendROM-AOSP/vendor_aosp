@@ -160,5 +160,7 @@ PRODUCT_PROPERTY_OVERRIDES += \
     ro.modversion=$(LEGENDROM_MOD_VERSION) \
     ro.legendrom.buildtype=$(LEGENDROM_BUILD_TYPE)
 
-EXTENDED_POST_PROCESS_PROPS := vendor/aosp/tools/legendrom_process_props.py
+# Google sounds
+include vendor/aosp/google/GoogleAudio.mk
 
+EXTENDED_POST_PROCESS_PROPS := vendor/aosp/tools/legendrom_process_props.py
