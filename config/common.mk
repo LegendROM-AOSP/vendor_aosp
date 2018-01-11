@@ -183,7 +183,7 @@ $(call inherit-product, vendor/aosp/prebuilt/common/bootanimation/bootanimation.
 
 # Versioning System
 # LegendROM first version.
-PRODUCT_VERSION_MAJOR = 8.0
+PRODUCT_VERSION_MAJOR = 8.1
 PRODUCT_VERSION_MINOR = Beta
 PRODUCT_VERSION_MAINTENANCE = 1.0
 LEGENDROM_POSTFIX := -$(shell date +"%Y%m%d-%H%M")
